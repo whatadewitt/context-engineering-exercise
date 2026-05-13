@@ -35,7 +35,9 @@ class AddToWatchlist(BaseModel):
 @app.get("/api/catalog")
 def get_catalog():
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM titles ORDER BY id").fetchall()
+    rows = conn.execute(
+        "SELECT id, title, kind, release_year as releaseYear, genre FROM titles ORDER BY id"
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -43,11 +45,11 @@ def get_catalog():
 @app.get("/api/watchlist")
 def get_watchlist(page: int = 1, size: int = 5):
     conn = get_conn()
-    offset = page * size
+    offset = (page - 1) * size
     rows = conn.execute(
         """
         SELECT w.id as watchlist_id, w.is_watched, w.added_at, w.watched_at,
-               t.id as title_id, t.title, t.kind, t.release_year, t.genre
+               t.id as title_id, t.title, t.kind, t.release_year as releaseYear, t.genre
         FROM watchlist w
         JOIN titles t ON t.id = w.title_id
         ORDER BY w.id
@@ -78,6 +80,26 @@ def add_to_watchlist(body: AddToWatchlist):
     return {"ok": True}
 
 
+@app.get("/api/watchlist/recent")
+def get_recent():
+    """Items watched today."""
+    today = datetime.utcnow().date().isoformat()
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT w.id as watchlist_id, w.is_watched, w.watched_at,
+               t.id as title_id, t.title, t.kind, t.release_year as releaseYear, t.genre
+        FROM watchlist w
+        JOIN titles t ON t.id = w.title_id
+        WHERE w.is_watched = 1 AND DATE(w.watched_at) = ?
+        ORDER BY w.watched_at DESC
+        """,
+        (today,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 @app.patch("/api/watchlist/{watchlist_id}")
 def mark_watched(watchlist_id: int, body: WatchUpdate):
     conn = get_conn()
@@ -89,23 +111,3 @@ def mark_watched(watchlist_id: int, body: WatchUpdate):
     conn.commit()
     conn.close()
     return {"ok": True}
-
-
-@app.get("/api/watchlist/recent")
-def get_recent():
-    """Items watched today."""
-    today = datetime.utcnow().date().isoformat()
-    conn = get_conn()
-    rows = conn.execute(
-        """
-        SELECT w.id as watchlist_id, w.is_watched, w.watched_at,
-               t.id as title_id, t.title, t.kind, t.release_year, t.genre
-        FROM watchlist w
-        JOIN titles t ON t.id = w.title_id
-        WHERE w.is_watched = 1 AND DATE(w.watched_at) = ?
-        ORDER BY w.watched_at DESC
-        """,
-        (today,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
